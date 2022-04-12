@@ -15,7 +15,7 @@ export const BlogList: React.VFC<Props> = ({ blogs }) => {
         graphql`
         fragment BlogList on Query
         @argumentDefinitions(
-            first: { type: "Int!", defaultValue: 10 }
+            first: { type: "Int", defaultValue: 10 }
             after: { type: "String", defaultValue: "" }
         )
         @refetchable(queryName: "BlogListPaginationQuery") {
