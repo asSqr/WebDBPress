@@ -9,13 +9,20 @@
     "watch:build": "yarn run build --watch",
     "start": "node lib/index.js",
     "watch:start": "nodemon yarn run start",
-    "dev": "concurrently 'yarn:watch:*'"
+    "dev": "concurrently 'yarn:watch:*'",
+    "generate": "graphql-codegen"
   },
   "dependencies": {
     "apollo-server": "^3.6.7",
-    "graphql": "^16.3.0"
+    "concurrently": "^7.1.0",
+    "graphql": "^16.3.0",
+    "graphql-relay": "^0.10.0",
+    "nodemon": "^2.0.15"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^2.6.2",
+    "@graphql-codegen/typescript": "^2.4.8",
+    "@graphql-codegen/typescript-resolvers": "^2.6.1",
     "typescript": "^4.6.3"
   }
 }
