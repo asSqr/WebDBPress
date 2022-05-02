@@ -146,6 +146,88 @@ impl BTree {
         self.search_internal(bufmgr, root_page, search_mode)
     }
 
+    fn insert_internal(
+        &self,
+        bufmgr: &mut BufferPoolManager,
+        buffer: Rc<Buffer>,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<Option<(Vec<u8>, PageId)>, Error> {
+        let node = node::Node::new(buffer.page.borrow_mut() as RefMut<[_]>);
+
+        match node::Body::new(node.header.node_type, node.body) {
+            node::Body::Leaf(mut leaf) => {
+                let slot_id = match leaf.search_slot_id(key) {
+                    Ok(_) => return Err(Error::DuplicateKey),
+                    Err(slot_id) => slot_id,
+                };
+
+                if leaf.insert(slot_id, key, value).is_some() {
+                    buffer.is_dirty.set(true);
+                    
+                    Ok(None)
+                } else {
+                    let prev_leaf_page_id = leaf.prev_page_id();
+                    let prev_leaf_buffer = prev_leaf_page_id
+                        .map(|next_leaf_page_id| bufmgr.fetch_page(next_leaf_page_id))
+                        .transpose()?;
+
+                    let next_leaf_buffer = bufmgr.create_page()?;
+
+                    if let Some(prev_leaf_buffer) = prev_leaf_buffer {
+                        let node = node::Node::new(prev_leaf_buffer.page.borrow_mut() as RefMut<[_]>);
+                        let mut prev_leaf = leaf::Leaf::new(node.body);
+
+                        prev_leaf.set_next_page_id(Some(new_leaf_buffer.page_id));
+                        prev_leaf_buffer.is_dirty.set(true);
+                    }
+
+                    leaf.set_prev_page_id(Some(new_leaf_buffer.page_id));
+                    
+                    let mut new_leaf_node = node::Node::new(new_leaf_buffer.page.borrow_mut() as RefMut<[_]>);
+                    new_leaf_node.initialize_as_leaf();
+                    let mut new_leaf =leaf::Leaf::new(new_leaf_node.body);
+                    new_leaf.initialize();
+
+                    let overflow_key = leaf.split_insert(&mut new_leaf, key, value);
+
+                    new_leaf.set_next_page_id(Some(buffer.page_id));
+                    new_leaf.set_prev_page_id(prev_leaf_page_id);
+
+                    buffer.is_dirty.set(true);
+
+                    Ok(Some((overflow_key, new_leaf_buffer.page_id)))
+                }
+            }
+        }
+    }
+
+    pub fn insert(
+        &self,
+        bufmgr: &mut BufferPoolManager,
+        key: &[u8],
+        value: &[u8],
+    ) -> Result<(), Error> {
+        let meta_buffer = bufmgr.fetch_page(self.meta_page_id)?;
+        let mut meta = meta::Meta::new(meta_buffer.page.borrow_mut() as RefMut<[_]>);
+        let root_page_id = meta.header.root_page_id;
+        let root_buffer = bufmgr.fetch_page(root_page_id);
+
+        if let Some((key, child_page_id)) = self.insert_internal(bufmgr, root_buffer, key, value)? {
+            let mut new_root_buffer = bufmgr.create_page()?;
+            let mut node = node::Node::new(new_root_buffer.page.borrow_mut() as RefMut<[_]>);
+            node.initialize_as_branch();
+
+            let mut branch = branch::Branch::new(node.body);
+            branch.initialize(&key, child_page_id, root_page_id);
+
+            meta.header.root_page_id = new_root_buffer.page_id;
+            meta_buffer.is_dirty.set(true);
+        }
+
+        Ok(())
+    }
+
 }
 
 pub struct Iter {
