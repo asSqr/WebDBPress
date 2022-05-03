@@ -22,7 +22,6 @@ pub struct Pair<'a> {
 }
 
 impl<'a> Pair<'a> {
-
     fn to_bytes(&self) -> Vec<u8> {
         bincode::options().serialize(self).unwrap()
     }
@@ -30,7 +29,6 @@ impl<'a> Pair<'a> {
     fn from_bytes(bytes: &'a [u8]) -> Self {
         bincode::options().deserialize(bytes).unwrap()
     }
-
 }
 
 #[derive(Debug, Error)]
@@ -48,7 +46,6 @@ pub enum SearchMode {
 }
 
 impl SearchMode {
-
     fn child_page_id(&self, branch: &branch::Branch<impl ByteSlice>) -> PageId {
         match self {
             SearchMode::Start => branch.child_at(0),
@@ -62,7 +59,6 @@ impl SearchMode {
             SearchMode::Key(key) => leaf.search_slot_id(key),
         }
     }
-
 }
 
 pub struct BTree {
@@ -70,7 +66,6 @@ pub struct BTree {
 }
 
 impl BTree {
-    
     pub fn create(bufmgr: &mut BufferPoolManager) -> Result<Self, Error> {
         let meta_buffer = bufmgr.create_page()?;
         let mut meta = meta::Meta::new(meta_buffer.page.borrow_mut() as RefMut<[_]>);
@@ -84,7 +79,7 @@ impl BTree {
 
         meta.header.root_page_id = root_buffer.page_id;
 
-        Ok(Self::new(meta_buffer.pageid))
+        Ok(Self::new(meta_buffer.page_id))
     }
 
     pub fn new(meta_page_id: PageId) -> Self {
@@ -96,7 +91,7 @@ impl BTree {
             let meta_buffer = bufmgr.fetch_page(self.meta_page_id)?;
             let meta = meta::Meta::new(meta_buffer.page.borrow() as Ref<[_]>);
             meta.header.root_page_id
-        }
+        };
 
         Ok(bufmgr.fetch_page(root_page_id)?)
     }
@@ -118,7 +113,7 @@ impl BTree {
                 let mut iter = Iter {
                     buffer: node_buffer,
                     slot_id,
-                }
+                };
 
                 if is_right_most {
                     iter.advance(bufmgr)?;
@@ -178,13 +173,13 @@ impl BTree {
                         let node = node::Node::new(prev_leaf_buffer.page.borrow_mut() as RefMut<[_]>);
                         let mut prev_leaf = leaf::Leaf::new(node.body);
 
-                        prev_leaf.set_next_page_id(Some(new_leaf_buffer.page_id));
+                        prev_leaf.set_next_page_id(Some(next_leaf_buffer.page_id));
                         prev_leaf_buffer.is_dirty.set(true);
                     }
 
-                    leaf.set_prev_page_id(Some(new_leaf_buffer.page_id));
+                    leaf.set_prev_page_id(Some(next_leaf_buffer.page_id));
                     
-                    let mut new_leaf_node = node::Node::new(new_leaf_buffer.page.borrow_mut() as RefMut<[_]>);
+                    let mut new_leaf_node = node::Node::new(next_leaf_buffer.page.borrow_mut() as RefMut<[_]>);
                     new_leaf_node.initialize_as_leaf();
                     let mut new_leaf =leaf::Leaf::new(new_leaf_node.body);
                     new_leaf.initialize();
@@ -196,7 +191,39 @@ impl BTree {
 
                     buffer.is_dirty.set(true);
 
-                    Ok(Some((overflow_key, new_leaf_buffer.page_id)))
+                    Ok(Some((overflow_key, next_leaf_buffer.page_id)))
+                }
+            }
+            node::Body::Branch(mut branch) => {
+                let child_idx = branch.search_child_idx(key);
+                let child_page_id = branch.child_at(child_idx);
+                let child_node_buffer = bufmgr.fetch_page(child_page_id)?;
+                if let Some((overflow_key_from_child, overflow_child_page_id)) =
+                    self.insert_internal(bufmgr, child_node_buffer, key, value)?
+                {
+                    if branch
+                        .insert(child_idx, &overflow_key_from_child, overflow_child_page_id)
+                        .is_some()
+                    {
+                        buffer.is_dirty.set(true);
+                        Ok(None)
+                    } else {
+                        let new_branch_buffer = bufmgr.create_page()?;
+                        let mut new_branch_node =
+                            node::Node::new(new_branch_buffer.page.borrow_mut() as RefMut<[_]>);
+                        new_branch_node.initialize_as_branch();
+                        let mut new_branch = branch::Branch::new(new_branch_node.body);
+                        let overflow_key = branch.split_insert(
+                            &mut new_branch,
+                            &overflow_key_from_child,
+                            overflow_child_page_id,
+                        );
+                        buffer.is_dirty.set(true);
+                        new_branch_buffer.is_dirty.set(true);
+                        Ok(Some((overflow_key, new_branch_buffer.page_id)))
+                    }
+                } else {
+                    Ok(None)
                 }
             }
         }
@@ -211,10 +238,10 @@ impl BTree {
         let meta_buffer = bufmgr.fetch_page(self.meta_page_id)?;
         let mut meta = meta::Meta::new(meta_buffer.page.borrow_mut() as RefMut<[_]>);
         let root_page_id = meta.header.root_page_id;
-        let root_buffer = bufmgr.fetch_page(root_page_id);
+        let root_buffer = bufmgr.fetch_page(root_page_id)?;
 
         if let Some((key, child_page_id)) = self.insert_internal(bufmgr, root_buffer, key, value)? {
-            let mut new_root_buffer = bufmgr.create_page()?;
+            let new_root_buffer = bufmgr.create_page()?;
             let mut node = node::Node::new(new_root_buffer.page.borrow_mut() as RefMut<[_]>);
             node.initialize_as_branch();
 
@@ -227,7 +254,6 @@ impl BTree {
 
         Ok(())
     }
-
 }
 
 pub struct Iter {
@@ -237,7 +263,7 @@ pub struct Iter {
 
 impl Iter {
     fn get(&self) -> Option<(Vec<u8>, Vec<u8>)> {
-        let leaf_node = node::Node::new(self.buffer.page.borrow as Ref<[_]>);
+        let leaf_node = node::Node::new(self.buffer.page.borrow() as Ref<[_]>);
         let leaf = leaf::Leaf::new(leaf_node.body);
 
         if self.slot_id < leaf.num_pairs() {

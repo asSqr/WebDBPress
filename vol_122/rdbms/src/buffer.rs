@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collecctions::HashMap;
+use std::collections::HashMap;
 use std::io;
 use std::ops::{Index, IndexMut};
 use std::rc::Rc;
@@ -48,7 +48,6 @@ pub struct BufferPool {
 }
 
 impl BufferPool {
-
     pub fn new(pool_size: usize) -> Self {
         let mut buffers = vec![];
         buffers.resize_with(pool_size, Default::default);
@@ -95,7 +94,6 @@ impl BufferPool {
     fn increment_id(&self, buffer_id: BufferId) -> BufferId {
         BufferId((buffer_id.0 + 1) % self.size())
     }
-
 }
 
 impl Index<BufferId> for BufferPool {
@@ -112,8 +110,13 @@ impl IndexMut<BufferId> for BufferPool {
     }
 }
 
-impl BufferPoolManager {
+pub struct BufferPoolManager {
+    disk: DiskManager,
+    pool: BufferPool,
+    page_table: HashMap<PageId, BufferId>,
+}
 
+impl BufferPoolManager {
     pub fn new(disk: DiskManager, pool: BufferPool) -> Self {
         let page_table = HashMap::new();
 
@@ -193,7 +196,6 @@ impl BufferPoolManager {
         }
         self.disk.sync()?;
 
-        OK(())
+        Ok(())
     }
-
 }

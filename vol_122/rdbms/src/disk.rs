@@ -12,7 +12,6 @@ pub const PAGE_SIZE: usize = 4096;
 pub struct PageId(pub u64);
 
 impl PageId {
-
     pub const INVALID_PAGE_ID: PageId = PageId(u64::MAX);
 
     pub fn valid(self) -> Option<PageId> {
@@ -26,7 +25,6 @@ impl PageId {
     pub fn to_u64(self) -> u64 {
         self.0
     }
-
 }
 
 impl Default for PageId {
@@ -55,7 +53,6 @@ pub struct DiskManager {
 }
 
 impl DiskManager {
-
     pub fn new(heap_file: File) -> io::Result<Self> {
         // ファイルサイズを取得
         let heap_file_size = heap_file.metadata()?.len();
@@ -82,7 +79,7 @@ impl DiskManager {
         let page_id = self.next_page_id;
         self.next_page_id += 1;
 
-        PageId(page_id);
+        PageId(page_id)
     }
 
     pub fn read_page_data(&mut self,
@@ -105,5 +102,4 @@ impl DiskManager {
         self.heap_file.flush()?;
         self.heap_file.sync_all()
     }
-
 }

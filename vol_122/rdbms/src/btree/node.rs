@@ -29,7 +29,6 @@ impl<B: ByteSlice> Node<B> {
 }
 
 impl<B: ByteSliceMut> Node<B> {
-
     pub fn initialize_as_leaf(&mut self) {
         self.header.node_type = NODE_TYPE_LEAF;
     }
@@ -37,7 +36,6 @@ impl<B: ByteSliceMut> Node<B> {
     pub fn initialize_as_branch(&mut self) {
         self.header.node_type = NODE_TYPE_BRANCH;
     }
-
 }
 
 pub enum Body<B> {
@@ -46,7 +44,6 @@ pub enum Body<B> {
 }
 
 impl<B: ByteSlice> Body<B> {
-
     pub fn new(node_type: [u8; 8], bytes: B) -> Body<B> {
         match node_type {
             NODE_TYPE_LEAF => Body::Leaf(Leaf::new(bytes)),
@@ -54,5 +51,4 @@ impl<B: ByteSlice> Body<B> {
             _ => unreachable!(),
         }
     }
-    
 }
