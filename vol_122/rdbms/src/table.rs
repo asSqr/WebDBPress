@@ -31,6 +31,7 @@ impl SimpleTable {
     }
 }
 
+#[derive(Debug)]
 pub struct Table {
     pub meta_page_id: PageId,
     pub num_key_elems: usize,
